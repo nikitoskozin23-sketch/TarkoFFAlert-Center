@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import webbrowser
 from pathlib import Path
 from typing import Any, Optional
@@ -29,11 +28,6 @@ from PySide6.QtWidgets import (
 from app.services.backend_manager import BackendManager
 from app.services.config_manager import ConfigManager
 
-try:
-    from app.services.command_sender import CommandSender  # type: ignore
-except Exception:
-    CommandSender = None  # type: ignore
-
 
 class MainWindow(QMainWindow):
     TTS_VOICE_PRESETS = [
@@ -60,15 +54,13 @@ class MainWindow(QMainWindow):
 
         self.backend = BackendManager()
         self.config_manager = ConfigManager(self.settings_path)
-        self.command_sender = self._create_command_sender()
 
         self._last_logs_text = ""
         self._current_state = "offline"
-        self._synced_from_backend = False
         self.provider_status_labels: dict[str, QLabel] = {}
 
         self.setWindowTitle("TarkoFF Stream Center v0.1")
-        self.resize(1220, 940)
+        self.resize(1280, 960)
 
         self.notice_timer = QTimer(self)
         self.notice_timer.setSingleShot(True)
@@ -97,12 +89,12 @@ class MainWindow(QMainWindow):
 
         self.status_label = QLabel("Статус: offline")
         self.status_label.setStyleSheet(
-            "font-size: 28px; font-weight: 700; color: #d32f2f;"
+            "font-size: 26px; font-weight: 700; color: #d32f2f;"
         )
         root.addWidget(self.status_label)
 
         top_buttons = QHBoxLayout()
-        top_buttons.setSpacing(10)
+        top_buttons.setSpacing(8)
 
         self.btn_start = QPushButton("Запустить backend")
         self.btn_stop = QPushButton("Остановить backend")
@@ -119,7 +111,7 @@ class MainWindow(QMainWindow):
             self.btn_control,
             self.btn_refresh,
         ):
-            btn.setMinimumHeight(38)
+            btn.setMinimumHeight(36)
             top_buttons.addWidget(btn)
 
         root.addLayout(top_buttons)
@@ -135,10 +127,12 @@ class MainWindow(QMainWindow):
         self.tabs.setTabPosition(QTabWidget.North)
 
         self.tab_alerts = self._build_alerts_tab()
+        self.tab_obs = self._build_obs_tab()
         self.tab_settings = self._build_settings_tab()
         self.tab_logs = self._build_logs_tab()
 
         self.tabs.addTab(self.tab_alerts, "Алерты")
+        self.tabs.addTab(self.tab_obs, "OBS")
         self.tabs.addTab(self.tab_settings, "Настройки")
         self.tabs.addTab(self.tab_logs, "Логи")
 
@@ -157,6 +151,12 @@ class MainWindow(QMainWindow):
         self.btn_copy_log.clicked.connect(self.on_copy_log)
         self.btn_clear_log.clicked.connect(self.on_clear_log)
 
+        self.btn_obs_connect.clicked.connect(self.on_obs_connect_clicked)
+        self.btn_qr_show.clicked.connect(self.on_show_qr_temp_clicked)
+        self.btn_qr_hide.clicked.connect(self.on_hide_qr_clicked)
+        self.btn_social_show.clicked.connect(self.on_show_social_temp_clicked)
+        self.btn_social_hide.clicked.connect(self.on_hide_social_clicked)
+
     def _build_alerts_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -168,21 +168,31 @@ class MainWindow(QMainWindow):
 
         self.info_box = QTextEdit()
         self.info_box.setReadOnly(True)
-        self.info_box.setFixedHeight(150)
+        self.info_box.setFixedHeight(140)
         self.info_box.setPlainText(
-            "Что здесь можно делать:\n\n"
-            "• отправлять тестовый донат прямо из GUI\n"
-            "• быстро проверить звук, TTS и overlay\n"
-            "• запускать overlay/control из верхней панели\n\n"
-            "Рекомендуемый порядок:\n"
+            "Быстрый сценарий проверки:\n\n"
             "1. Запусти backend\n"
-            "2. Открой overlay\n"
-            "3. Отправь тестовый донат\n"
-            "4. Проверь звук, голос и отображение"
+            "2. Перейди на вкладку OBS и подключи OBS\n"
+            "3. Открой overlay\n"
+            "4. Отправь тестовый донат\n"
+            "5. На вкладке OBS проверь QR Donate и Social Promo"
         )
         layout.addWidget(self.info_box)
 
         layout.addStretch(1)
+        return page
+
+    def _build_obs_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(12)
+
+        layout.addWidget(self._build_obs_connection_group())
+        layout.addWidget(self._build_obs_qr_group())
+        layout.addWidget(self._build_obs_social_group())
+        layout.addStretch(1)
+
         return page
 
     def _build_settings_tab(self) -> QWidget:
@@ -233,7 +243,7 @@ class MainWindow(QMainWindow):
 
         for idx, (key, title) in enumerate(self.PROVIDERS):
             name_label = QLabel(title)
-            name_label.setStyleSheet("font-size: 14px; font-weight: 700; color: #e5e7eb;")
+            name_label.setStyleSheet("font-size: 14px; font-weight: 700; color: #111827;")
 
             status_label = QLabel("")
             status_label.setMinimumWidth(130)
@@ -247,6 +257,116 @@ class MainWindow(QMainWindow):
             self.provider_status_labels[key] = status_label
             self._set_provider_status(key, "offline")
 
+        return box
+
+    def _build_obs_connection_group(self) -> QGroupBox:
+        box = QGroupBox("Подключение OBS")
+        layout = QGridLayout(box)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(10)
+
+        self.obs_host_input = QLineEdit("127.0.0.1")
+        self.obs_port_input = QLineEdit("4455")
+        self.obs_password_input = QLineEdit("")
+        self.obs_password_input.setEchoMode(QLineEdit.Password)
+
+        int_regex = QRegularExpression(r"^\d+$")
+        int_validator = QRegularExpressionValidator(int_regex, self)
+        self.obs_port_input.setValidator(int_validator)
+
+        self.obs_status_label = QLabel("OBS: не подключён")
+        self.obs_status_label.setStyleSheet(
+            "font-size: 13px; font-weight: 800; color: #94a3b8;"
+        )
+
+        self.btn_obs_connect = QPushButton("Подключить OBS")
+        self.btn_obs_connect.setMinimumHeight(34)
+
+        layout.addWidget(QLabel("Host:"), 0, 0)
+        layout.addWidget(self.obs_host_input, 0, 1)
+        layout.addWidget(QLabel("Port:"), 0, 2)
+        layout.addWidget(self.obs_port_input, 0, 3)
+
+        layout.addWidget(QLabel("Password:"), 1, 0)
+        layout.addWidget(self.obs_password_input, 1, 1, 1, 3)
+
+        tools = QHBoxLayout()
+        tools.addWidget(self.btn_obs_connect)
+        tools.addStretch()
+
+        layout.addLayout(tools, 2, 0, 1, 4)
+        layout.addWidget(self.obs_status_label, 3, 0, 1, 4)
+
+        return box
+
+    def _build_obs_qr_group(self) -> QGroupBox:
+        box = QGroupBox("Источник: QR Donate")
+        layout = QGridLayout(box)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(10)
+
+        self.obs_qr_scene_input = QLineEdit("2")
+        self.obs_qr_source_input = QLineEdit("TarkoFFchanin QR Donate Premium v2")
+        self.obs_qr_duration_input = QLineEdit("15")
+
+        int_regex = QRegularExpression(r"^\d+$")
+        int_validator = QRegularExpressionValidator(int_regex, self)
+        self.obs_qr_duration_input.setValidator(int_validator)
+
+        self.btn_qr_show = QPushButton("Показать QR")
+        self.btn_qr_hide = QPushButton("Скрыть QR")
+        self.btn_qr_show.setMinimumHeight(32)
+        self.btn_qr_hide.setMinimumHeight(32)
+
+        layout.addWidget(QLabel("Сцена:"), 0, 0)
+        layout.addWidget(self.obs_qr_scene_input, 0, 1)
+        layout.addWidget(QLabel("Время (сек):"), 0, 2)
+        layout.addWidget(self.obs_qr_duration_input, 0, 3)
+
+        layout.addWidget(QLabel("Источник:"), 1, 0)
+        layout.addWidget(self.obs_qr_source_input, 1, 1, 1, 3)
+
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.btn_qr_show)
+        buttons.addWidget(self.btn_qr_hide)
+        buttons.addStretch()
+
+        layout.addLayout(buttons, 2, 0, 1, 4)
+        return box
+
+    def _build_obs_social_group(self) -> QGroupBox:
+        box = QGroupBox("Источник: Social Promo")
+        layout = QGridLayout(box)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(10)
+
+        self.obs_social_scene_input = QLineEdit("2")
+        self.obs_social_source_input = QLineEdit("TarkoFFchanin Social Promo Premium")
+        self.obs_social_duration_input = QLineEdit("10")
+
+        int_regex = QRegularExpression(r"^\d+$")
+        int_validator = QRegularExpressionValidator(int_regex, self)
+        self.obs_social_duration_input.setValidator(int_validator)
+
+        self.btn_social_show = QPushButton("Показать Social")
+        self.btn_social_hide = QPushButton("Скрыть Social")
+        self.btn_social_show.setMinimumHeight(32)
+        self.btn_social_hide.setMinimumHeight(32)
+
+        layout.addWidget(QLabel("Сцена:"), 0, 0)
+        layout.addWidget(self.obs_social_scene_input, 0, 1)
+        layout.addWidget(QLabel("Время (сек):"), 0, 2)
+        layout.addWidget(self.obs_social_duration_input, 0, 3)
+
+        layout.addWidget(QLabel("Источник:"), 1, 0)
+        layout.addWidget(self.obs_social_source_input, 1, 1, 1, 3)
+
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.btn_social_show)
+        buttons.addWidget(self.btn_social_hide)
+        buttons.addStretch()
+
+        layout.addLayout(buttons, 2, 0, 1, 4)
         return box
 
     def _build_test_group(self) -> QGroupBox:
@@ -269,7 +389,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.input_message, 2, 1)
 
         self.btn_send_test_alert = QPushButton("Отправить тестовый донат")
-        self.btn_send_test_alert.setMinimumHeight(38)
+        self.btn_send_test_alert.setMinimumHeight(36)
         layout.addWidget(self.btn_send_test_alert, 3, 0, 1, 2)
 
         layout.setRowStretch(4, 1)
@@ -336,8 +456,8 @@ class MainWindow(QMainWindow):
         buttons = QHBoxLayout()
         self.btn_save_settings = QPushButton("Сохранить настройки")
         self.btn_apply_ads = QPushButton("Применить ON/OFF рекламы")
-        self.btn_save_settings.setMinimumHeight(38)
-        self.btn_apply_ads.setMinimumHeight(38)
+        self.btn_save_settings.setMinimumHeight(36)
+        self.btn_apply_ads.setMinimumHeight(36)
         buttons.addWidget(self.btn_save_settings)
         buttons.addWidget(self.btn_apply_ads)
 
@@ -349,24 +469,6 @@ class MainWindow(QMainWindow):
     # -------------------------------------------------------------------------
     # helpers
     # -------------------------------------------------------------------------
-
-    def _create_command_sender(self) -> Any:
-        if CommandSender is None:
-            return None
-
-        for args, kwargs in (
-            ((), {}),
-            (("127.0.0.1", 8765), {}),
-            ((), {"host": "127.0.0.1", "port": 8765}),
-            (("http://127.0.0.1:8765",), {}),
-            ((), {"base_url": "http://127.0.0.1:8765"}),
-        ):
-            try:
-                return CommandSender(*args, **kwargs)
-            except Exception:
-                continue
-
-        return None
 
     def _populate_tts_voices(self) -> None:
         self.input_tts_voice.clear()
@@ -392,6 +494,16 @@ class MainWindow(QMainWindow):
                 return label
 
         return value
+
+    def _set_tts_voice_value(self, value: str) -> None:
+        voice_value = (value or "").strip() or "default"
+        display_text = self._tts_display_from_value(voice_value)
+
+        existing_labels = [self.input_tts_voice.itemText(i) for i in range(self.input_tts_voice.count())]
+        if display_text not in existing_labels:
+            self.input_tts_voice.addItem(display_text, voice_value)
+
+        self.input_tts_voice.setCurrentText(display_text)
 
     def _normalize_volume_text(self, raw_value: str, fallback: str) -> str:
         text = str(raw_value or "").strip().replace(",", ".")
@@ -421,29 +533,34 @@ class MainWindow(QMainWindow):
     def _set_notice(self, text: str, level: str = "info", timeout_ms: int = 4000) -> None:
         styles = {
             "info": (
-                "background: rgba(59,130,246,0.12);"
-                "border: 1px solid rgba(59,130,246,0.35);"
-                "color: #dbeafe;"
+                "background: #dbeafe;"
+                "border: 1px solid #60a5fa;"
+                "color: #0f172a;"
             ),
             "success": (
-                "background: rgba(34,197,94,0.12);"
-                "border: 1px solid rgba(34,197,94,0.35);"
-                "color: #dcfce7;"
+                "background: #dcfce7;"
+                "border: 1px solid #4ade80;"
+                "color: #052e16;"
             ),
             "warning": (
-                "background: rgba(245,158,11,0.12);"
-                "border: 1px solid rgba(245,158,11,0.35);"
-                "color: #fef3c7;"
+                "background: #fef3c7;"
+                "border: 1px solid #f59e0b;"
+                "color: #78350f;"
             ),
             "error": (
-                "background: rgba(239,68,68,0.12);"
-                "border: 1px solid rgba(239,68,68,0.35);"
-                "color: #fee2e2;"
+                "background: #fee2e2;"
+                "border: 1px solid #ef4444;"
+                "color: #7f1d1d;"
             ),
         }
+
         style = styles.get(level, styles["info"])
         self.notice_label.setStyleSheet(
-            f"padding: 8px 12px; border-radius: 8px; font-size: 13px; {style}"
+            "padding: 10px 12px;"
+            "border-radius: 8px;"
+            "font-size: 13px;"
+            "font-weight: 700;"
+            + style
         )
         self.notice_label.setText(text)
         self.notice_label.show()
@@ -476,7 +593,7 @@ class MainWindow(QMainWindow):
             "error": "#d32f2f",
         }
         color = colors.get(state, "#444444")
-        return f"font-size: 28px; font-weight: 700; color: {color};"
+        return f"font-size: 26px; font-weight: 700; color: {color};"
 
     def _set_status(self, state: str, text: Optional[str] = None) -> None:
         self._current_state = state
@@ -497,7 +614,6 @@ class MainWindow(QMainWindow):
         label = self.provider_status_labels.get(key)
         if label is None:
             return
-
         text, color = self._provider_style(state)
         label.setText(text)
         label.setStyleSheet(f"font-size: 13px; font-weight: 800; color: {color};")
@@ -577,11 +693,17 @@ class MainWindow(QMainWindow):
         self.btn_start.setEnabled(not online)
         self.btn_stop.setEnabled(online)
         self.btn_restart.setEnabled(online)
-
         self.btn_overlay.setEnabled(online)
         self.btn_control.setEnabled(online)
+        self.btn_refresh.setEnabled(True)
 
         self.btn_send_test_alert.setEnabled(online)
+        self.btn_obs_connect.setEnabled(online)
+        self.btn_qr_show.setEnabled(online)
+        self.btn_qr_hide.setEnabled(online)
+        self.btn_social_show.setEnabled(online)
+        self.btn_social_hide.setEnabled(online)
+
         self.btn_apply_ads.setEnabled(True)
         self.btn_save_settings.setEnabled(True)
 
@@ -590,20 +712,6 @@ class MainWindow(QMainWindow):
 
     def _save_settings_dict(self, data: dict[str, Any]) -> None:
         self.config_manager.save(data)
-
-    def _fetch_backend_settings(self) -> dict[str, Any] | None:
-        try:
-            if self.command_sender is None:
-                return None
-
-            response = self.command_sender.settings()
-            if isinstance(response, dict):
-                settings = response.get("settings")
-                if isinstance(settings, dict):
-                    return settings
-            return None
-        except Exception:
-            return None
 
     def _apply_settings_to_form(self, data: dict[str, Any]) -> None:
         self.chk_show_ads.setChecked(bool(data.get("show_site_ads", False)))
@@ -618,28 +726,21 @@ class MainWindow(QMainWindow):
         )
         self._set_tts_voice_value(str(data.get("tts_voice", "default")))
 
-    def _try_sync_settings_from_backend(self, show_notice: bool = False) -> bool:
-        settings = self._fetch_backend_settings()
-        if not settings:
-            return False
+        self.obs_host_input.setText(str(data.get("obs_host", "127.0.0.1")))
+        self.obs_port_input.setText(str(data.get("obs_port", "4455")))
+        self.obs_password_input.setText(str(data.get("obs_password", "")))
 
-        self._apply_settings_to_form(settings)
-        self._synced_from_backend = True
+        self.obs_qr_scene_input.setText(str(data.get("obs_qr_scene", "2")))
+        self.obs_qr_source_input.setText(
+            str(data.get("obs_qr_source", "TarkoFFchanin QR Donate Premium v2"))
+        )
+        self.obs_qr_duration_input.setText(str(data.get("obs_qr_duration", "15")))
 
-        if show_notice:
-            self._set_notice("Настройки подтянуты из backend.", "info", 3500)
-
-        return True
-
-    def _set_tts_voice_value(self, value: str) -> None:
-        voice_value = (value or "").strip() or "default"
-        display_text = self._tts_display_from_value(voice_value)
-
-        existing_labels = [self.input_tts_voice.itemText(i) for i in range(self.input_tts_voice.count())]
-        if display_text not in existing_labels:
-            self.input_tts_voice.addItem(display_text, voice_value)
-
-        self.input_tts_voice.setCurrentText(display_text)
+        self.obs_social_scene_input.setText(str(data.get("obs_social_scene", "2")))
+        self.obs_social_source_input.setText(
+            str(data.get("obs_social_source", "TarkoFFchanin Social Promo Premium"))
+        )
+        self.obs_social_duration_input.setText(str(data.get("obs_social_duration", "10")))
 
     def _collect_form_settings(self) -> dict[str, Any]:
         self._apply_volume_formatting()
@@ -651,6 +752,15 @@ class MainWindow(QMainWindow):
             "music_volume": self.input_music_volume.text().strip(),
             "tts_volume": self.input_tts_volume.text().strip(),
             "tts_voice": self._tts_value_from_display(self.input_tts_voice.currentText()),
+            "obs_host": self.obs_host_input.text().strip() or "127.0.0.1",
+            "obs_port": self.obs_port_input.text().strip() or "4455",
+            "obs_password": self.obs_password_input.text(),
+            "obs_qr_scene": self.obs_qr_scene_input.text().strip() or "2",
+            "obs_qr_source": self.obs_qr_source_input.text().strip() or "TarkoFFchanin QR Donate Premium v2",
+            "obs_qr_duration": self.obs_qr_duration_input.text().strip() or "15",
+            "obs_social_scene": self.obs_social_scene_input.text().strip() or "2",
+            "obs_social_source": self.obs_social_source_input.text().strip() or "TarkoFFchanin Social Promo Premium",
+            "obs_social_duration": self.obs_social_duration_input.text().strip() or "10",
         }
 
     def _collect_backend_settings_payload(self) -> dict[str, Any]:
@@ -691,49 +801,13 @@ class MainWindow(QMainWindow):
             return f"[ui-error] Не удалось получить лог: {e}\n"
         return ""
 
-    def _sender_call(self, method_names: list[str], **payload: Any) -> tuple[bool, str]:
-        if self.command_sender is None:
-            return False, "CommandSender недоступен."
-
-        for method_name in method_names:
-            method = getattr(self.command_sender, method_name, None)
-            if method is None or not callable(method):
-                continue
-
-            try:
-                sig = inspect.signature(method)
-                if any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
-                    result = method(**payload)
-                else:
-                    accepted = {
-                        name: value
-                        for name, value in payload.items()
-                        if name in sig.parameters
-                    }
-                    result = method(**accepted)
-            except Exception as e:
-                return False, f"{method_name}: {e}"
-
-            if isinstance(result, tuple) and len(result) == 2:
-                return bool(result[0]), str(result[1])
-            if isinstance(result, bool):
-                return result, "OK" if result else "Команда не выполнена."
-            if result is None:
-                return True, "OK"
-            return True, str(result)
-
-        return False, "Подходящий метод в CommandSender не найден."
-
     def _http_post_json(self, path: str, payload: dict[str, Any]) -> tuple[bool, str]:
         import requests
 
-        base_url = "http://127.0.0.1:8765"
-        url = f"{base_url}{path}"
-
+        url = f"http://127.0.0.1:8765{path}"
         try:
             session = requests.Session()
             session.trust_env = False
-
             resp = session.post(url, json=payload, timeout=5)
 
             if resp.ok:
@@ -743,9 +817,83 @@ class MainWindow(QMainWindow):
                     return True, resp.text or f"HTTP {resp.status_code}"
 
             return False, resp.text or f"HTTPError {resp.status_code}"
-
         except Exception as e:
             return False, str(e)
+
+    def _http_post_json_data(self, path: str, payload: dict[str, Any]) -> tuple[bool, Any]:
+        import requests
+
+        url = f"http://127.0.0.1:8765{path}"
+        try:
+            session = requests.Session()
+            session.trust_env = False
+            resp = session.post(url, json=payload, timeout=5)
+
+            if not resp.ok:
+                try:
+                    return False, resp.json()
+                except Exception:
+                    return False, resp.text or f"HTTPError {resp.status_code}"
+
+            try:
+                return True, resp.json()
+            except Exception:
+                return True, resp.text or f"HTTP {resp.status_code}"
+        except Exception as e:
+            return False, str(e)
+
+    def _http_get_json_data(self, path: str) -> tuple[bool, Any]:
+        import requests
+
+        url = f"http://127.0.0.1:8765{path}"
+        try:
+            session = requests.Session()
+            session.trust_env = False
+            resp = session.get(url, timeout=3)
+
+            if not resp.ok:
+                try:
+                    return False, resp.json()
+                except Exception:
+                    return False, resp.text or f"HTTPError {resp.status_code}"
+
+            try:
+                return True, resp.json()
+            except Exception:
+                return True, resp.text or f"HTTP {resp.status_code}"
+        except Exception as e:
+            return False, str(e)
+
+    def _update_obs_status_label(self, connected: bool, text: str = "") -> None:
+        if connected:
+            self.obs_status_label.setText(text or "OBS: подключён")
+            self.obs_status_label.setStyleSheet(
+                "font-size: 13px; font-weight: 800; color: #22c55e;"
+            )
+        else:
+            self.obs_status_label.setText(text or "OBS: не подключён")
+            self.obs_status_label.setStyleSheet(
+                "font-size: 13px; font-weight: 800; color: #94a3b8;"
+            )
+
+    def _refresh_obs_status(self) -> None:
+        if not self._is_online():
+            self._update_obs_status_label(False, "OBS: backend offline")
+            return
+
+        ok, data = self._http_get_json_data("/api/obs/status")
+        if not ok or not isinstance(data, dict):
+            self._update_obs_status_label(False, "OBS: статус недоступен")
+            return
+
+        connected = bool(data.get("connected", False))
+        if connected:
+            version = data.get("version", {}) or {}
+            obs_ver = version.get("obs_version", "unknown")
+            current_scene = data.get("current_scene", "")
+            self._update_obs_status_label(True, f"OBS: подключён ({obs_ver}) | Сцена: {current_scene}")
+        else:
+            self._update_obs_status_label(False, "OBS: не подключён")
 
     # -------------------------------------------------------------------------
     # actions
@@ -757,15 +905,13 @@ class MainWindow(QMainWindow):
 
         if online:
             self._set_status("online", "Статус: online")
-            if not self._synced_from_backend:
-                self._try_sync_settings_from_backend(show_notice=False)
         else:
             self._set_status("offline", "Статус: offline")
-            self._synced_from_backend = False
 
         self._update_buttons_state()
         self._set_logs_text(logs_text)
         self._update_provider_statuses(logs_text)
+        self._refresh_obs_status()
 
     def on_start_backend(self) -> None:
         self._set_status("starting", "Статус: starting...")
@@ -778,7 +924,6 @@ class MainWindow(QMainWindow):
 
         self.refresh_everything()
         if ok:
-            self._try_sync_settings_from_backend(show_notice=False)
             self._show_info(msg)
         else:
             self._set_status("error", "Статус: error")
@@ -808,10 +953,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             ok, msg = False, f"Ошибка перезапуска backend: {e}"
 
-        self._synced_from_backend = False
         self.refresh_everything()
         if ok:
-            self._try_sync_settings_from_backend(show_notice=False)
             self._show_info(msg)
         else:
             self._set_status("error", "Статус: error")
@@ -858,6 +1001,139 @@ class MainWindow(QMainWindow):
 
         self.refresh_everything()
 
+    def on_obs_connect_clicked(self) -> None:
+        if not self._is_online():
+            self._show_warning("Сначала запусти backend.")
+            return
+
+        form_data = self._collect_form_settings()
+        try:
+            self._save_settings_dict(form_data)
+        except Exception:
+            pass
+
+        password = form_data["obs_password"]
+        if not password.strip():
+            self._show_error("Введи пароль OBS в поле Password.", popup=False)
+            self._update_obs_status_label(False, "OBS: пароль не указан")
+            return
+
+        payload = {
+            "host": form_data["obs_host"],
+            "port": int(form_data["obs_port"]),
+            "password": password,
+        }
+
+        ok, data = self._http_post_json_data("/api/obs/connect", payload)
+
+        if ok and isinstance(data, dict) and data.get("ok"):
+            version = data.get("version", {}) or {}
+            obs_ver = version.get("obs_version", "unknown")
+            self._update_obs_status_label(True, f"OBS: подключён ({obs_ver})")
+            self._show_info(data.get("message", "OBS подключён"))
+        else:
+            message = data.get("message", "Не удалось подключиться к OBS") if isinstance(data, dict) else str(data)
+            self._update_obs_status_label(False, "OBS: ошибка подключения")
+            self._show_error(message, popup=False)
+
+        self.refresh_everything()
+
+    def on_show_qr_temp_clicked(self) -> None:
+        if not self._is_online():
+            self._show_warning("Сначала запусти backend.")
+            return
+
+        form_data = self._collect_form_settings()
+        try:
+            self._save_settings_dict(form_data)
+        except Exception:
+            pass
+
+        payload = {
+            "scene_name": form_data["obs_qr_scene"],
+            "source_name": form_data["obs_qr_source"],
+            "duration_sec": int(form_data["obs_qr_duration"]),
+        }
+
+        ok, data = self._http_post_json_data("/api/obs/show-qr-temp", payload)
+
+        if ok and isinstance(data, dict) and data.get("ok"):
+            self._show_info(data.get("message", "QR показан"))
+        else:
+            message = data.get("message", "Не удалось показать QR") if isinstance(data, dict) else str(data)
+            self._show_error(message, popup=False)
+
+        self.refresh_everything()
+
+    def on_hide_qr_clicked(self) -> None:
+        if not self._is_online():
+            self._show_warning("Сначала запусти backend.")
+            return
+
+        form_data = self._collect_form_settings()
+        payload = {
+            "scene_name": form_data["obs_qr_scene"],
+            "source_name": form_data["obs_qr_source"],
+        }
+
+        ok, data = self._http_post_json_data("/api/obs/hide-source", payload)
+
+        if ok and isinstance(data, dict) and data.get("ok"):
+            self._show_info(data.get("message", "QR скрыт"))
+        else:
+            message = data.get("message", "Не удалось скрыть QR") if isinstance(data, dict) else str(data)
+            self._show_error(message, popup=False)
+
+        self.refresh_everything()
+
+    def on_show_social_temp_clicked(self) -> None:
+        if not self._is_online():
+            self._show_warning("Сначала запусти backend.")
+            return
+
+        form_data = self._collect_form_settings()
+        try:
+            self._save_settings_dict(form_data)
+        except Exception:
+            pass
+
+        payload = {
+            "scene_name": form_data["obs_social_scene"],
+            "source_name": form_data["obs_social_source"],
+            "duration_sec": int(form_data["obs_social_duration"]),
+        }
+
+        ok, data = self._http_post_json_data("/api/obs/show-social-temp", payload)
+
+        if ok and isinstance(data, dict) and data.get("ok"):
+            self._show_info(data.get("message", "Social Promo показан"))
+        else:
+            message = data.get("message", "Не удалось показать Social Promo") if isinstance(data, dict) else str(data)
+            self._show_error(message, popup=False)
+
+        self.refresh_everything()
+
+    def on_hide_social_clicked(self) -> None:
+        if not self._is_online():
+            self._show_warning("Сначала запусти backend.")
+            return
+
+        form_data = self._collect_form_settings()
+        payload = {
+            "scene_name": form_data["obs_social_scene"],
+            "source_name": form_data["obs_social_source"],
+        }
+
+        ok, data = self._http_post_json_data("/api/obs/hide-source", payload)
+
+        if ok and isinstance(data, dict) and data.get("ok"):
+            self._show_info(data.get("message", "Social Promo скрыт"))
+        else:
+            message = data.get("message", "Не удалось скрыть Social Promo") if isinstance(data, dict) else str(data)
+            self._show_error(message, popup=False)
+
+        self.refresh_everything()
+
     def on_save_settings(self) -> None:
         data = self._collect_form_settings()
 
@@ -884,22 +1160,17 @@ class MainWindow(QMainWindow):
 
         backend_payload = self._collect_backend_settings_payload()
 
-        try:
-            if self.command_sender is None:
-                raise RuntimeError("CommandSender недоступен.")
+        ok, msg = self._http_post_json("/api/settings", backend_payload)
+        if not ok:
+            self._show_error(f"Не удалось применить settings в backend:\n\n{msg}", popup=False)
+            return
 
-            self.command_sender.update_settings(backend_payload)
-            self.command_sender.toggle_ad(gui_data["show_site_ads"])
-            self._synced_from_backend = False
+        ok, msg = self._http_post_json("/api/toggle-ad", {"enabled": gui_data["show_site_ads"]})
+        if not ok:
+            self._show_error(f"Не удалось применить ON/OFF рекламы:\n\n{msg}", popup=False)
+            return
 
-            self._show_info("Настройки рекламы применены в backend.")
-        except Exception as e:
-            self._show_error(
-                "Настройки сохранены локально, но не удалось применить их в backend.\n\n"
-                f"{e}",
-                popup=False,
-            )
-
+        self._show_info("Настройки рекламы применены в backend.")
         self.refresh_everything()
 
     def on_copy_log(self) -> None:
