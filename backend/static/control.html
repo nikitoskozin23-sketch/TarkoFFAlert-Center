@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Custom Alerts Control</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: rgba(255,255,255,0.06);
+      --panel-2: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.12);
+      --text: #f4f7ff;
+      --muted: #9ca8c7;
+      --accent: #7c5cff;
+      --accent-2: #22c55e;
+      --danger: #ef4444;
+      --shadow: 0 18px 50px rgba(0,0,0,0.35);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top right, rgba(124,92,255,0.18), transparent 30%),
+        radial-gradient(circle at bottom left, rgba(34,197,94,0.12), transparent 24%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, Arial, sans-serif;
+    }
+
+    body {
+      padding: 24px;
+    }
+
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 20px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow: hidden;
+    }
+
+    .card-head {
+      padding: 18px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.01em;
+    }
+
+    .card-sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .card-body {
+      padding: 20px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #dbe5ff;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 13px;
+      outline: none;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: rgba(124,92,255,0.7);
+      box-shadow: 0 0 0 3px rgba(124,92,255,0.15);
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 800;
+      color: white;
+      cursor: pointer;
+      transition: transform .12s ease, opacity .12s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #7c5cff, #6d28d9);
+    }
+
+    .btn-green {
+      background: linear-gradient(135deg, #22c55e, #15803d);
+    }
+
+    .btn-dark {
+      background: linear-gradient(135deg, #334155, #0f172a);
+    }
+
+    .btn-red {
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+    }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .preset {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 14px;
+      padding: 12px;
+      cursor: pointer;
+      transition: transform .12s ease, border-color .12s ease, background .12s ease;
+    }
+
+    .preset:hover {
+      transform: translateY(-1px);
+      border-color: rgba(124,92,255,0.45);
+      background: rgba(255,255,255,0.07);
+    }
+
+    .preset-title {
+      font-weight: 900;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+
+    .preset-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .status {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      display: none;
+    }
+
+    .status.show {
+      display: block;
+    }
+
+    .status.ok {
+      background: rgba(34,197,94,0.14);
+      border: 1px solid rgba(34,197,94,0.28);
+      color: #c9ffd9;
+    }
+
+    .status.err {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.28);
+      color: #ffd4d4;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .mini {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .mini-k {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .mini-v {
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 700px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .history-item {
+      background: rgba(255,255,255,0.045);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .history-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .history-title {
+      font-size: 15px;
+      font-weight: 900;
+      margin: 0 0 4px;
+    }
+
+    .history-line {
+      color: #e7ecff;
+      font-size: 14px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .footer-note {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 980px) {
+      .wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .grid,
+      .preset-grid,
+      .mini-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h1 class="card-title">Тест-панель алертов</h1>
+          <div class="card-sub">Локальная отправка событий в overlay без стрима и без донатов</div>
+        </div>
+        <div class="row">
+          <button class="btn-dark" id="btnHealth">Обновить статус</button>
+          <button class="btn-green" id="btnDemoPack">Demo pack</button>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="mini-grid">
+          <div class="mini">
+            <div class="mini-k">Overlay clients</div>
+            <div class="mini-v" id="healthClients">—</div>
+          </div>
+          <div class="mini">
+            <div class="mini-k">History</div>
+            <div class="mini-v" id="healthHistory">—</div>
+          </div>
+          <div class="mini">
+            <div class="mini-k">API</div>
+            <div class="mini-v" id="healthOk">—</div>
+          </div>
+        </div>
+
+        <div class="preset-grid" style="margin-bottom:16px;">
+          <div class="preset" data-preset="donation">
+            <div class="preset-title">Донат</div>
+            <div class="preset-sub">Быстрый тест суммы, текста, анимации и звука</div>
+          </div>
+          <div class="preset" data-preset="subscribe">
+            <div class="preset-title">Подписка</div>
+            <div class="preset-sub">Тест подписки / member / subscribe sound</div>
+          </div>
+          <div class="preset" data-preset="youtube_chat">
+            <div class="preset-title">YouTube чат</div>
+            <div class="preset-sub">Проверка кастомного текстового алерта</div>
+          </div>
+          <div class="preset" data-preset="vk_reward">
+            <div class="preset-title">VK награда</div>
+            <div class="preset-sub">Проверка custom-события под VK Play</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label for="platform">Платформа</label>
+            <select id="platform">
+              <option value="youtube">youtube</option>
+              <option value="vk_play">vk_play</option>
+              <option value="donation_alerts">donation_alerts</option>
+              <option value="twitch">twitch</option>
+              <option value="trovo">trovo</option>
+              <option value="fake">fake</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="type">Тип события</label>
+            <select id="type">
+              <option value="custom">custom</option>
+              <option value="follow">follow</option>
+              <option value="subscribe">subscribe</option>
+              <option value="resubscribe">resubscribe</option>
+              <option value="gift_sub">gift_sub</option>
+              <option value="member">member</option>
+              <option value="donation">donation</option>
+              <option value="superchat">superchat</option>
+              <option value="raid">raid</option>
+            </select>
+          </div>
+
+          <div class="field full">
+            <label for="title">Заголовок</label>
+            <input id="title" type="text" value="Тестовый алерт" />
+          </div>
+
+          <div class="field">
+            <label for="username">Ник / пользователь</label>
+            <input id="username" type="text" value="TarkoFFTester" />
+          </div>
+
+          <div class="field">
+            <label for="amount">Сумма</label>
+            <input id="amount" type="text" value="" placeholder="Например: 250 RUB" />
+          </div>
+
+          <div class="field">
+            <label for="duration_ms">Длительность, мс</label>
+            <input id="duration_ms" type="number" value="7000" />
+          </div>
+
+          <div class="field">
+            <label for="avatar_url">Avatar URL</label>
+            <input id="avatar_url" type="text" value="" placeholder="Можно оставить пустым" />
+          </div>
+
+          <div class="field full">
+            <label for="message">Текст</label>
+            <textarea id="message">Проверка текста, анимации, звука и отображения в OBS.</textarea>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:16px;">
+          <button class="btn-primary" id="btnSend">Отправить алерт</button>
+          <button class="btn-dark" id="btnClearAmount">Очистить сумму</button>
+          <button class="btn-red" id="btnReset">Сбросить форму</button>
+        </div>
+
+        <div id="statusBox" class="status"></div>
+
+        <div class="footer-note">
+          Эта панель шлёт события в <code>/api/test</code> и <code>/api/demo-pack</code>.
+          Удобно гонять визуал, звуки и тексты без реальных событий.
+        </div>
+      </div>
+    </section>
+
+    <aside class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Последние алерты</h2>
+          <div class="card-sub">Берётся из <code>/api/history</code></div>
+        </div>
+        <div class="row">
+          <button class="btn-dark" id="btnRefreshHistory">Обновить</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="historyList" class="history-list"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const form = {
+      platform: $("platform"),
+      type: $("type"),
+      title: $("title"),
+      username: $("username"),
+      amount: $("amount"),
+      duration_ms: $("duration_ms"),
+      avatar_url: $("avatar_url"),
+      message: $("message"),
+    };
+
+    const statusBox = $("statusBox");
+    const historyList = $("historyList");
+
+    function showStatus(text, ok = true) {
+      statusBox.textContent = text;
+      statusBox.className = `status show ${ok ? "ok" : "err"}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function buildPayload() {
+      const payload = {
+        type: form.type.value,
+        platform: form.platform.value,
+        title: form.title.value.trim(),
+        message: form.message.value.trim(),
+        username: form.username.value.trim(),
+        duration_ms: Number(form.duration_ms.value) || 7000,
+      };
+
+      const amount = form.amount.value.trim();
+      const avatar = form.avatar_url.value.trim();
+
+      if (amount) payload.amount = amount;
+      if (avatar) payload.avatar_url = avatar;
+
+      return payload;
+    }
+
+    async function postJson(url, body = {}) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {}
+
+      if (!res.ok) {
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+
+      return data;
+    }
+
+    async function refreshHealth() {
+      try {
+        const res = await fetch("/api/health");
+        const data = await res.json();
+
+        $("healthClients").textContent = data.clients ?? "0";
+        $("healthHistory").textContent = data.history ?? "0";
+        $("healthOk").textContent = data.ok ? "OK" : "ERR";
+      } catch (err) {
+        $("healthOk").textContent = "ERR";
+        showStatus(`Ошибка health: ${err.message}`, false);
+      }
+    }
+
+    async function refreshHistory() {
+      try {
+        const res = await fetch("/api/history");
+        const items = await res.json();
+
+        if (!Array.isArray(items) || items.length === 0) {
+          historyList.innerHTML = `<div class="muted">История пока пустая.</div>`;
+          return;
+        }
+
+        historyList.innerHTML = items.slice().reverse().map((item) => {
+          return `
+            <div class="history-item">
+              <div class="history-top">
+                <span class="chip">${escapeHtml(item.platform || "unknown")}</span>
+                <span class="chip">${escapeHtml(item.type || "custom")}</span>
+              </div>
+              <div class="history-title">${escapeHtml(item.title || "Без заголовка")}</div>
+              <div class="history-line">${escapeHtml(item.username || "")}</div>
+              <div class="history-line">${escapeHtml(item.message || "")}</div>
+              ${item.amount ? `<div class="history-line"><strong>${escapeHtml(item.amount)}</strong></div>` : ""}
+            </div>
+          `;
+        }).join("");
+      } catch (err) {
+        historyList.innerHTML = `<div class="muted">Ошибка загрузки истории: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    async function sendAlert() {
+      try {
+        const payload = buildPayload();
+        await postJson("/api/test", payload);
+        showStatus("Алерт отправлен.");
+        await refreshHealth();
+        await refreshHistory();
+      } catch (err) {
+        showStatus(`Ошибка отправки: ${err.message}`, false);
+      }
+    }
+
+    async function sendDemoPack() {
+      try {
+        await postJson("/api/demo-pack");
+        showStatus("Demo pack отправлен.");
+        await refreshHealth();
+        setTimeout(refreshHistory, 500);
+      } catch (err) {
+        showStatus(`Ошибка demo pack: ${err.message}`, false);
+      }
+    }
+
+    function applyPreset(name) {
+      if (name === "donation") {
+        form.platform.value = "donation_alerts";
+        form.type.value = "donation";
+        form.title.value = "Новый донат";
+        form.username.value = "Supporter_77";
+        form.amount.value = "250 RUB";
+        form.duration_ms.value = "7000";
+        form.avatar_url.value = "";
+        form.message.value = "На развитие алертов 🔥";
+        return;
+      }
+
+      if (name === "subscribe") {
+        form.platform.value = "youtube";
+        form.type.value = "subscribe";
+        form.title.value = "Новая подписка";
+        form.username.value = "NewMember";
+        form.amount.value = "";
+        form.duration_ms.value = "7000";
+        form.avatar_url.value = "";
+        form.message.value = "Оформил подписку на канал";
+        return;
+      }
+
+      if (name === "youtube_chat") {
+        form.platform.value = "youtube";
+        form.type.value = "custom";
+        form.title.value = "YouTube чат";
+        form.username.value = "YTViewer";
+        form.amount.value = "";
+        form.duration_ms.value = "7000";
+        form.avatar_url.value = "";
+        form.message.value = "Проверка обычного сообщения чата";
+        return;
+      }
+
+      if (name === "vk_reward") {
+        form.platform.value = "vk_play";
+        form.type.value = "custom";
+        form.title.value = "Награда VK Play";
+        form.username.value = "VK Play";
+        form.amount.value = "";
+        form.duration_ms.value = "7000";
+        form.avatar_url.value = "";
+        form.message.value = "Бахнуть ЛАЙК за 500";
+      }
+    }
+
+    function resetForm() {
+      form.platform.value = "youtube";
+      form.type.value = "custom";
+      form.title.value = "Тестовый алерт";
+      form.username.value = "TarkoFFTester";
+      form.amount.value = "";
+      form.duration_ms.value = "7000";
+      form.avatar_url.value = "";
+      form.message.value = "Проверка текста, анимации, звука и отображения в OBS.";
+    }
+
+    $("btnSend").addEventListener("click", sendAlert);
+    $("btnDemoPack").addEventListener("click", sendDemoPack);
+    $("btnHealth").addEventListener("click", refreshHealth);
+    $("btnRefreshHistory").addEventListener("click", refreshHistory);
+    $("btnClearAmount").addEventListener("click", () => form.amount.value = "");
+    $("btnReset").addEventListener("click", resetForm);
+
+    document.querySelectorAll("[data-preset]").forEach((el) => {
+      el.addEventListener("click", () => applyPreset(el.dataset.preset));
+    });
+
+    refreshHealth();
+    refreshHistory();
+  </script>
+</body>
+</html>

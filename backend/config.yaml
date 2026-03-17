@@ -1,0 +1,107 @@
+server:
+  host: 127.0.0.1
+  port: 8765
+
+app:
+  streamer_name: TarkoFFchanin
+  default_duration_ms: 7000
+  debug: false
+
+providers:
+  twitch:
+    enabled: false
+    client_id: ""
+    client_secret: ""
+    broadcaster_user_id: ""
+    scopes:
+      - moderator:read:followers
+      - channel:read:subscriptions
+      - bits:read
+
+  youtube:
+    enabled: true
+    token_file: "backend/credentials/youtube_token.json"
+    broadcast_check_interval_sec: 20
+    poll_interval_sec: 5
+    error_retry_sec: 15
+    max_results: 200
+    default_duration_ms: 7000
+    skip_existing_on_startup: true
+
+  trovo:
+    enabled: false
+    client_id: ""
+    access_token: ""
+    channel_id: ""
+    poll_interval_sec: 10
+
+  donation_alerts:
+    enabled: true
+    access_token: "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxNzk0NiIsImp0aSI6IjViYTQyYjQzZjBjYmU5YzcxZjJmNDQ1OGIwOTA0ZTY1YzY1NmZkODQxZDliNWI5YzU4ZDE5NDkwNDg2MzI1NjNkODBjYmEzNjY4MDg5YThhIiwiaWF0IjoxNzczNTY2OTU1LjA2MDgsIm5iZiI6MTc3MzU2Njk1NS4wNjA4LCJleHAiOjE4MDUxMDI5NTUuMDUxOCwic3ViIjoiNDgzNTgxMSIsInNjb3BlcyI6WyJvYXV0aC11c2VyLXNob3ciLCJvYXV0aC1kb25hdGlvbi1zdWJzY3JpYmUiXX0.oZlctcEgkn0CvAmYUHGfWKBq8MlRK_S4YtKu7_cPuwJn9muYmAtUGAJuWkUmuTWCsrTVFuVwVB9FuhrCWYM4-O49_4ZQodjQf8TR_1gwwKYSaTz3_UwyZhYkpg-ICTQBqqoVfVIoJ_W_JKJqlWU_g5phXMsPHmocxTDY5uhlKN0jn7RfP9QiivHzEMzV0jkvnfk0DHnMz-0_R4gUg-J6VmMxbJerw1Ecxecr7_OFKKXINMjkCdjRLvfwKZk_90wwv-ZGrJuP8_4n4P6TE0io3BlrUWwUTsfGN4jRFx4SaZ03TS1Qk10TX0gVpLe6uftIZKsdvKbw77WNzlv-vshUxbQc1HB3JnEd61LpKlSX_q_6bUN04r-Gyf44RSb3_tQrTd7AmI7OkOJbfK8_FwLvDXJ6nrNubHRyae0_vT5hs9NBMVzUY0K_H75xzbqNpLQ3r15E6q-DxTHAVv4pFN4-_iZwBxgWkjia3Xg1VTWY4KvD0sUuvfxQv0kYi6nvdCFYdkB2ADivgOA9zpldNfbuwQ0m_Og8fqWRNlnKb_NHe65vb9hoBtnRS30uubauqf1J3U1gOh7MLh_3L0S4yrr0xDsHd5Glg0TKC70ZHcV4cgMBi3U9mtw9rztPR4-Lt6vad_V9hw1KwgrgsPTKNEnWM4ypaClmKV5QwA7eE94Q86c"
+    user_id: ""
+
+  vk_play:
+    enabled: true
+    app_id: "96c9589vrfjkvum5"
+    public_key: "awIpqMWznJYdSIvm7BlWUEA1VUJClXZPBlnMWMCYCGrQwXiHqL8OBldTuSVztDY9"
+    secret_key: "oUlUCtMjzxD6rvwq7PXWoKskFB6mQFbGp5XMnioNykf0bVOTQGd3GSO1pCJ5mbqt"
+    redirect_uri: "http://localhost:3000/callback"
+    access_token: "em5sJ6IXNCTmBqWMgioN4A"
+    refresh_token: "ARirG6rPDvKFfTiEEFyTdw"
+    user_id: 29615087
+    channel_id: 18221941
+    nick: "TarkoFFchanin_"
+    channel_slug: "tarkofchanlive"
+    duration_ms: 7000
+    emit_unknown_events: false
+    emit_chat_as_custom: false
+    subscribe_channels:
+      - info
+      - chat
+      - channel_points
+    ws_channels:
+      chat: "api-channel-chat:18221941"
+      private_chat: "api-channel-chat:18221941#29615087"
+      info: "api-channel-info:18221941"
+      private_info: "api-channel-info:18221941#29615087"
+      channel_points: "api-channel-points:18221941"
+      private_channel_points: "api-channel-points:18221941#29615087"
+      limited_chat: "api-stream-chat:5b99f65e-f331-4eb0-90e5-e231ee8ba6c4"
+      limited_private_chat: "api-stream-chat:5b99f65e-f331-4eb0-90e5-e231ee8ba6c4#29615087"
+
+      vk_play_rewards:
+  "Выделение сообщения":
+    enabled: true
+    title: "ВЫДЕЛЕНИЕ СООБЩЕНИЯ"
+    message: "Сообщение выделено в чате 💬"
+    sound: "vk_highlight.mp3"
+
+  "Отправка сообщения в чат":
+    enabled: true
+    title: "СООБЩЕНИЕ В ЧАТ"
+    message: "Награда активирована ✉️"
+    sound: "vk_chat.mp3"
+
+  "Благодарность за стрим!":
+    enabled: true
+    title: "СПАСИБО ЗА СТРИМ"
+    message: "Зритель поблагодарил за стрим ❤️"
+    sound: "vk_thanks.mp3"
+
+  "Бахнуть ЛАЙК":
+    enabled: true
+    title: "ЛАЙК В ЧАТ!"
+    message: "Пора бахнуть лайк 🔥"
+    sound: "vk_like.mp3"
+
+  "+ К Настроению Стримера":
+    enabled: true
+    title: "ПЛЮС К НАСТРОЕНИЮ"
+    message: "Настроение стримера повышено 😎"
+    sound: "vk_mood.mp3"
+
+  "Заказ музыки":
+    enabled: true
+    title: "ЗАКАЗ МУЗЫКИ"
+    message: "Новый музыкальный заказ 🎵"
+    sound: "vk_music.mp3"

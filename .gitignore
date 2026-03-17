@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build / release
+build/
+dist/
+release/
+
+# PyInstaller cache
+*.manifest
+*.pkg
+
+# Logs
+*.log
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# pytest / mypy / coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local config overrides
+.env
+.env.*
+*.local
+
+# Runtime temp files
+backend/static/tts/*.mp3
+!backend/static/tts/.gitkeep
+
+# Local GUI settings
+config/settings.json
+
+# Private credentials
+backend/credentials/
+backend/credentials/*.json
