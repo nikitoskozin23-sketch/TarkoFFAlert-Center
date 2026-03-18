@@ -44,6 +44,47 @@ class MainWindow(QMainWindow):
         ("vk_play", "VK Play"),
     ]
 
+    OBS_SOURCE_DEFAULTS: dict[str, dict[str, str]] = {
+        "qr": {
+            "title": "TarkoFFchanin QR Donate Premium v2",
+            "scene": "2",
+            "source": "TarkoFFchanin QR Donate Premium v2",
+            "duration": "15",
+        },
+        "social": {
+            "title": "TarkoFFchanin Social Promo Premium",
+            "scene": "3",
+            "source": "TarkoFFchanin Social Promo Premium",
+            "duration": "10",
+        },
+        "brb": {
+            "title": "TarkoFFchanin Be Right Back Clean",
+            "scene": "3",
+            "source": "TarkoFFchanin Be Right Back Clean",
+            "duration": "10",
+        },
+        "soon": {
+            "title": "TarkoFFchanin Stream Soon Timer 10m",
+            "scene": "1",
+            "source": "TarkoFFchanin Stream Soon Timer 10m",
+            "duration": "10",
+        },
+        "chat": {
+            "title": "TarkoFFchanin Chat Layout Clean Working 16x9",
+            "scene": "Сцена 2",
+            "source": "TarkoFFchanin Chat Layout Clean Working 16x9",
+            "duration": "10",
+        },
+    }
+
+    OBS_SOURCE_LAYOUT: list[tuple[str, int, int, int, int]] = [
+        ("qr", 0, 0, 1, 1),
+        ("social", 0, 1, 1, 1),
+        ("brb", 1, 0, 1, 1),
+        ("soon", 1, 1, 1, 1),
+        ("chat", 2, 0, 1, 2),
+    ]
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -60,7 +101,7 @@ class MainWindow(QMainWindow):
         self.provider_status_labels: dict[str, QLabel] = {}
 
         self.setWindowTitle("TarkoFF Stream Center v0.1")
-        self.resize(1280, 960)
+        self.resize(1360, 980)
 
         self.notice_timer = QTimer(self)
         self.notice_timer.setSingleShot(True)
@@ -150,12 +191,19 @@ class MainWindow(QMainWindow):
         self.btn_apply_ads.clicked.connect(self.on_apply_ads)
         self.btn_copy_log.clicked.connect(self.on_copy_log)
         self.btn_clear_log.clicked.connect(self.on_clear_log)
-
         self.btn_obs_connect.clicked.connect(self.on_obs_connect_clicked)
-        self.btn_qr_show.clicked.connect(self.on_show_qr_temp_clicked)
-        self.btn_qr_hide.clicked.connect(self.on_hide_qr_clicked)
-        self.btn_social_show.clicked.connect(self.on_show_social_temp_clicked)
-        self.btn_social_hide.clicked.connect(self.on_hide_social_clicked)
+        self.btn_obs_inventory.clicked.connect(self.on_obs_inventory_clicked)
+
+        for prefix in self.OBS_SOURCE_DEFAULTS:
+            getattr(self, f"btn_{prefix}_show").clicked.connect(
+                lambda _=False, p=prefix: self._on_show_source(p)
+            )
+            getattr(self, f"btn_{prefix}_show_temp").clicked.connect(
+                lambda _=False, p=prefix: self._on_show_source_temp(p)
+            )
+            getattr(self, f"btn_{prefix}_hide").clicked.connect(
+                lambda _=False, p=prefix: self._on_hide_source(p)
+            )
 
     def _build_alerts_tab(self) -> QWidget:
         page = QWidget()
@@ -168,14 +216,14 @@ class MainWindow(QMainWindow):
 
         self.info_box = QTextEdit()
         self.info_box.setReadOnly(True)
-        self.info_box.setFixedHeight(140)
+        self.info_box.setFixedHeight(150)
         self.info_box.setPlainText(
             "Быстрый сценарий проверки:\n\n"
             "1. Запусти backend\n"
             "2. Перейди на вкладку OBS и подключи OBS\n"
             "3. Открой overlay\n"
             "4. Отправь тестовый донат\n"
-            "5. На вкладке OBS проверь QR Donate и Social Promo"
+            "5. Проверь нужные OBS-источники прямо по их реальным именам"
         )
         layout.addWidget(self.info_box)
 
@@ -184,14 +232,29 @@ class MainWindow(QMainWindow):
 
     def _build_obs_tab(self) -> QWidget:
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(12)
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(12)
 
-        layout.addWidget(self._build_obs_connection_group())
-        layout.addWidget(self._build_obs_qr_group())
-        layout.addWidget(self._build_obs_social_group())
-        layout.addStretch(1)
+        outer.addWidget(self._build_obs_connection_group())
+        outer.addWidget(self._build_obs_inventory_group())
+
+        tip = QLabel("Названия сцен и источников должны совпадать с OBS один в один.")
+        tip.setWordWrap(True)
+        tip.setStyleSheet("font-size: 12px; color: #475569;")
+        outer.addWidget(tip)
+
+        grid_wrap = QWidget()
+        grid = QGridLayout(grid_wrap)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
+
+        for prefix, row, col, row_span, col_span in self.OBS_SOURCE_LAYOUT:
+            grid.addWidget(self._build_obs_source_group(prefix), row, col, row_span, col_span)
+
+        outer.addWidget(grid_wrap)
+        outer.addStretch(1)
 
         return page
 
@@ -299,74 +362,76 @@ class MainWindow(QMainWindow):
 
         return box
 
-    def _build_obs_qr_group(self) -> QGroupBox:
-        box = QGroupBox("Источник: QR Donate")
-        layout = QGridLayout(box)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(10)
+    def _build_obs_inventory_group(self) -> QGroupBox:
+        box = QGroupBox("Сцены и источники из OBS")
+        layout = QVBoxLayout(box)
+        layout.setSpacing(8)
 
-        self.obs_qr_scene_input = QLineEdit("2")
-        self.obs_qr_source_input = QLineEdit("TarkoFFchanin QR Donate Premium v2")
-        self.obs_qr_duration_input = QLineEdit("15")
+        tools = QHBoxLayout()
+        self.btn_obs_inventory = QPushButton("Получить сцены и источники из OBS")
+        self.btn_obs_inventory.setMinimumHeight(32)
+        tools.addWidget(self.btn_obs_inventory)
+        tools.addStretch()
 
-        int_regex = QRegularExpression(r"^\d+$")
-        int_validator = QRegularExpressionValidator(int_regex, self)
-        self.obs_qr_duration_input.setValidator(int_validator)
+        self.obs_inventory_box = QPlainTextEdit()
+        self.obs_inventory_box.setReadOnly(True)
+        self.obs_inventory_box.setMinimumHeight(220)
+        self.obs_inventory_box.setPlaceholderText(
+            "Нажми кнопку сверху, и программа покажет список сцен и источников из OBS."
+        )
 
-        self.btn_qr_show = QPushButton("Показать QR")
-        self.btn_qr_hide = QPushButton("Скрыть QR")
-        self.btn_qr_show.setMinimumHeight(32)
-        self.btn_qr_hide.setMinimumHeight(32)
-
-        layout.addWidget(QLabel("Сцена:"), 0, 0)
-        layout.addWidget(self.obs_qr_scene_input, 0, 1)
-        layout.addWidget(QLabel("Время (сек):"), 0, 2)
-        layout.addWidget(self.obs_qr_duration_input, 0, 3)
-
-        layout.addWidget(QLabel("Источник:"), 1, 0)
-        layout.addWidget(self.obs_qr_source_input, 1, 1, 1, 3)
-
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.btn_qr_show)
-        buttons.addWidget(self.btn_qr_hide)
-        buttons.addStretch()
-
-        layout.addLayout(buttons, 2, 0, 1, 4)
+        layout.addLayout(tools)
+        layout.addWidget(self.obs_inventory_box)
         return box
 
-    def _build_obs_social_group(self) -> QGroupBox:
-        box = QGroupBox("Источник: Social Promo")
-        layout = QGridLayout(box)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(10)
+    def _build_obs_source_group(self, prefix: str) -> QGroupBox:
+        defaults = self.OBS_SOURCE_DEFAULTS[prefix]
 
-        self.obs_social_scene_input = QLineEdit("2")
-        self.obs_social_source_input = QLineEdit("TarkoFFchanin Social Promo Premium")
-        self.obs_social_duration_input = QLineEdit("10")
+        box = QGroupBox(defaults["title"])
+        layout = QGridLayout(box)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(8)
+
+        scene_input = QLineEdit(defaults["scene"])
+        source_input = QLineEdit(defaults["source"])
+        duration_input = QLineEdit(defaults["duration"])
 
         int_regex = QRegularExpression(r"^\d+$")
         int_validator = QRegularExpressionValidator(int_regex, self)
-        self.obs_social_duration_input.setValidator(int_validator)
+        duration_input.setValidator(int_validator)
 
-        self.btn_social_show = QPushButton("Показать Social")
-        self.btn_social_hide = QPushButton("Скрыть Social")
-        self.btn_social_show.setMinimumHeight(32)
-        self.btn_social_hide.setMinimumHeight(32)
+        btn_show = QPushButton("Показать")
+        btn_show_temp = QPushButton("Показать на N сек")
+        btn_hide = QPushButton("Скрыть")
+
+        btn_show.setMinimumHeight(30)
+        btn_show_temp.setMinimumHeight(30)
+        btn_hide.setMinimumHeight(30)
+
+        setattr(self, f"{prefix}_scene_input", scene_input)
+        setattr(self, f"{prefix}_source_input", source_input)
+        setattr(self, f"{prefix}_duration_input", duration_input)
+        setattr(self, f"btn_{prefix}_show", btn_show)
+        setattr(self, f"btn_{prefix}_show_temp", btn_show_temp)
+        setattr(self, f"btn_{prefix}_hide", btn_hide)
 
         layout.addWidget(QLabel("Сцена:"), 0, 0)
-        layout.addWidget(self.obs_social_scene_input, 0, 1)
+        layout.addWidget(scene_input, 0, 1)
         layout.addWidget(QLabel("Время (сек):"), 0, 2)
-        layout.addWidget(self.obs_social_duration_input, 0, 3)
+        layout.addWidget(duration_input, 0, 3)
 
         layout.addWidget(QLabel("Источник:"), 1, 0)
-        layout.addWidget(self.obs_social_source_input, 1, 1, 1, 3)
+        layout.addWidget(source_input, 1, 1, 1, 3)
 
         buttons = QHBoxLayout()
-        buttons.addWidget(self.btn_social_show)
-        buttons.addWidget(self.btn_social_hide)
+        buttons.setSpacing(6)
+        buttons.addWidget(btn_show)
+        buttons.addWidget(btn_show_temp)
+        buttons.addWidget(btn_hide)
         buttons.addStretch()
 
         layout.addLayout(buttons, 2, 0, 1, 4)
+
         return box
 
     def _build_test_group(self) -> QGroupBox:
@@ -699,10 +764,12 @@ class MainWindow(QMainWindow):
 
         self.btn_send_test_alert.setEnabled(online)
         self.btn_obs_connect.setEnabled(online)
-        self.btn_qr_show.setEnabled(online)
-        self.btn_qr_hide.setEnabled(online)
-        self.btn_social_show.setEnabled(online)
-        self.btn_social_hide.setEnabled(online)
+        self.btn_obs_inventory.setEnabled(online)
+
+        for prefix in self.OBS_SOURCE_DEFAULTS:
+            getattr(self, f"btn_{prefix}_show").setEnabled(online)
+            getattr(self, f"btn_{prefix}_show_temp").setEnabled(online)
+            getattr(self, f"btn_{prefix}_hide").setEnabled(online)
 
         self.btn_apply_ads.setEnabled(True)
         self.btn_save_settings.setEnabled(True)
@@ -730,21 +797,21 @@ class MainWindow(QMainWindow):
         self.obs_port_input.setText(str(data.get("obs_port", "4455")))
         self.obs_password_input.setText(str(data.get("obs_password", "")))
 
-        self.obs_qr_scene_input.setText(str(data.get("obs_qr_scene", "2")))
-        self.obs_qr_source_input.setText(
-            str(data.get("obs_qr_source", "TarkoFFchanin QR Donate Premium v2"))
-        )
-        self.obs_qr_duration_input.setText(str(data.get("obs_qr_duration", "15")))
-
-        self.obs_social_scene_input.setText(str(data.get("obs_social_scene", "2")))
-        self.obs_social_source_input.setText(
-            str(data.get("obs_social_source", "TarkoFFchanin Social Promo Premium"))
-        )
-        self.obs_social_duration_input.setText(str(data.get("obs_social_duration", "10")))
+        for prefix, defaults in self.OBS_SOURCE_DEFAULTS.items():
+            getattr(self, f"{prefix}_scene_input").setText(
+                str(data.get(f"obs_{prefix}_scene", defaults["scene"]))
+            )
+            getattr(self, f"{prefix}_source_input").setText(
+                str(data.get(f"obs_{prefix}_source", defaults["source"]))
+            )
+            getattr(self, f"{prefix}_duration_input").setText(
+                str(data.get(f"obs_{prefix}_duration", defaults["duration"]))
+            )
 
     def _collect_form_settings(self) -> dict[str, Any]:
         self._apply_volume_formatting()
-        return {
+
+        data: dict[str, Any] = {
             "show_site_ads": self.chk_show_ads.isChecked(),
             "ad_title": self.input_ad_title.text().strip(),
             "ad_line2": self.input_ad_line2.text().strip(),
@@ -755,13 +822,14 @@ class MainWindow(QMainWindow):
             "obs_host": self.obs_host_input.text().strip() or "127.0.0.1",
             "obs_port": self.obs_port_input.text().strip() or "4455",
             "obs_password": self.obs_password_input.text(),
-            "obs_qr_scene": self.obs_qr_scene_input.text().strip() or "2",
-            "obs_qr_source": self.obs_qr_source_input.text().strip() or "TarkoFFchanin QR Donate Premium v2",
-            "obs_qr_duration": self.obs_qr_duration_input.text().strip() or "15",
-            "obs_social_scene": self.obs_social_scene_input.text().strip() or "2",
-            "obs_social_source": self.obs_social_source_input.text().strip() or "TarkoFFchanin Social Promo Premium",
-            "obs_social_duration": self.obs_social_duration_input.text().strip() or "10",
         }
+
+        for prefix, defaults in self.OBS_SOURCE_DEFAULTS.items():
+            data[f"obs_{prefix}_scene"] = getattr(self, f"{prefix}_scene_input").text().strip() or defaults["scene"]
+            data[f"obs_{prefix}_source"] = getattr(self, f"{prefix}_source_input").text().strip() or defaults["source"]
+            data[f"obs_{prefix}_duration"] = getattr(self, f"{prefix}_duration_input").text().strip() or defaults["duration"]
+
+        return data
 
     def _collect_backend_settings_payload(self) -> dict[str, Any]:
         gui = self._collect_form_settings()
@@ -778,6 +846,15 @@ class MainWindow(QMainWindow):
     def _load_settings_into_form(self) -> None:
         data = self._load_settings_dict()
         self._apply_settings_to_form(data)
+
+    def _obs_values(self, prefix: str) -> dict[str, str]:
+        defaults = self.OBS_SOURCE_DEFAULTS[prefix]
+        return {
+            "scene_name": getattr(self, f"{prefix}_scene_input").text().strip() or defaults["scene"],
+            "source_name": getattr(self, f"{prefix}_source_input").text().strip() or defaults["source"],
+            "duration_sec": getattr(self, f"{prefix}_duration_input").text().strip() or defaults["duration"],
+            "title": defaults["title"],
+        }
 
     def _set_logs_text(self, text: str) -> None:
         text = text or ""
@@ -894,6 +971,31 @@ class MainWindow(QMainWindow):
             self._update_obs_status_label(True, f"OBS: подключён ({obs_ver}) | Сцена: {current_scene}")
         else:
             self._update_obs_status_label(False, "OBS: не подключён")
+
+    def _format_obs_inventory(self, data: dict[str, Any]) -> str:
+        current_scene = str(data.get("current_scene") or "").strip()
+        scenes = data.get("scenes") or []
+        sources_by_scene = data.get("sources_by_scene") or {}
+
+        lines: list[str] = []
+
+        if current_scene:
+            lines.append(f"Текущая сцена: {current_scene}")
+            lines.append("")
+
+        for scene_name in scenes:
+            lines.append(f"Сцена: {scene_name}")
+            sources = sources_by_scene.get(scene_name) or []
+
+            if sources:
+                for source_name in sources:
+                    lines.append(f"  - {source_name}")
+            else:
+                lines.append("  - (источники не найдены)")
+
+            lines.append("")
+
+        return "\n".join(lines).strip()
 
     # -------------------------------------------------------------------------
     # actions
@@ -1038,98 +1140,91 @@ class MainWindow(QMainWindow):
 
         self.refresh_everything()
 
-    def on_show_qr_temp_clicked(self) -> None:
+    def on_obs_inventory_clicked(self) -> None:
+        if not self._is_online():
+            self._show_warning("Сначала запусти backend.")
+            return
+
+        ok, data = self._http_get_json_data("/api/obs/scenes-and-sources")
+
+        if ok and isinstance(data, dict) and data.get("ok"):
+            text = self._format_obs_inventory(data)
+            self.obs_inventory_box.setPlainText(text)
+            self._show_info("Список сцен и источников из OBS обновлён.")
+        else:
+            message = (
+                data.get("message", "Не удалось получить список сцен и источников")
+                if isinstance(data, dict)
+                else str(data)
+            )
+            self._show_error(message, popup=False)
+
+    def _on_show_source(self, prefix: str) -> None:
         if not self._is_online():
             self._show_warning("Сначала запусти backend.")
             return
 
         form_data = self._collect_form_settings()
-        try:
-            self._save_settings_dict(form_data)
-        except Exception:
-            pass
+        self._save_settings_dict(form_data)
 
+        values = self._obs_values(prefix)
         payload = {
-            "scene_name": form_data["obs_qr_scene"],
-            "source_name": form_data["obs_qr_source"],
-            "duration_sec": int(form_data["obs_qr_duration"]),
+            "scene_name": values["scene_name"],
+            "source_name": values["source_name"],
         }
 
-        ok, data = self._http_post_json_data("/api/obs/show-qr-temp", payload)
+        ok, data = self._http_post_json_data("/api/obs/show-source", payload)
 
         if ok and isinstance(data, dict) and data.get("ok"):
-            self._show_info(data.get("message", "QR показан"))
+            self._show_info(f"Показан источник: {values['title']}")
         else:
-            message = data.get("message", "Не удалось показать QR") if isinstance(data, dict) else str(data)
+            message = data.get("message", f"Не удалось показать {values['title']}") if isinstance(data, dict) else str(data)
             self._show_error(message, popup=False)
 
         self.refresh_everything()
 
-    def on_hide_qr_clicked(self) -> None:
+    def _on_show_source_temp(self, prefix: str) -> None:
         if not self._is_online():
             self._show_warning("Сначала запусти backend.")
             return
 
         form_data = self._collect_form_settings()
+        self._save_settings_dict(form_data)
+
+        values = self._obs_values(prefix)
         payload = {
-            "scene_name": form_data["obs_qr_scene"],
-            "source_name": form_data["obs_qr_source"],
+            "scene_name": values["scene_name"],
+            "source_name": values["source_name"],
+            "duration_sec": int(values["duration_sec"]),
+        }
+
+        ok, data = self._http_post_json_data("/api/obs/show-source-temp", payload)
+
+        if ok and isinstance(data, dict) and data.get("ok"):
+            self._show_info(f"Показан на {values['duration_sec']} сек: {values['title']}")
+        else:
+            message = data.get("message", f"Не удалось показать {values['title']}") if isinstance(data, dict) else str(data)
+            self._show_error(message, popup=False)
+
+        self.refresh_everything()
+
+    def _on_hide_source(self, prefix: str) -> None:
+        if not self._is_online():
+            self._show_warning("Сначала запусти backend.")
+            return
+
+        values = self._obs_values(prefix)
+        payload = {
+            "scene_name": values["scene_name"],
+            "source_name": values["source_name"],
         }
 
         ok, data = self._http_post_json_data("/api/obs/hide-source", payload)
 
         if ok and isinstance(data, dict) and data.get("ok"):
-            self._show_info(data.get("message", "QR скрыт"))
+            self._show_info(f"Скрыт источник: {values['title']}")
         else:
-            message = data.get("message", "Не удалось скрыть QR") if isinstance(data, dict) else str(data)
-            self._show_error(message, popup=False)
-
-        self.refresh_everything()
-
-    def on_show_social_temp_clicked(self) -> None:
-        if not self._is_online():
-            self._show_warning("Сначала запусти backend.")
-            return
-
-        form_data = self._collect_form_settings()
-        try:
-            self._save_settings_dict(form_data)
-        except Exception:
-            pass
-
-        payload = {
-            "scene_name": form_data["obs_social_scene"],
-            "source_name": form_data["obs_social_source"],
-            "duration_sec": int(form_data["obs_social_duration"]),
-        }
-
-        ok, data = self._http_post_json_data("/api/obs/show-social-temp", payload)
-
-        if ok and isinstance(data, dict) and data.get("ok"):
-            self._show_info(data.get("message", "Social Promo показан"))
-        else:
-            message = data.get("message", "Не удалось показать Social Promo") if isinstance(data, dict) else str(data)
-            self._show_error(message, popup=False)
-
-        self.refresh_everything()
-
-    def on_hide_social_clicked(self) -> None:
-        if not self._is_online():
-            self._show_warning("Сначала запусти backend.")
-            return
-
-        form_data = self._collect_form_settings()
-        payload = {
-            "scene_name": form_data["obs_social_scene"],
-            "source_name": form_data["obs_social_source"],
-        }
-
-        ok, data = self._http_post_json_data("/api/obs/hide-source", payload)
-
-        if ok and isinstance(data, dict) and data.get("ok"):
-            self._show_info(data.get("message", "Social Promo скрыт"))
-        else:
-            message = data.get("message", "Не удалось скрыть Social Promo") if isinstance(data, dict) else str(data)
+            message = data.get("message", f"Не удалось скрыть {values['title']}") if isinstance(data, dict) else str(data)
             self._show_error(message, popup=False)
 
         self.refresh_everything()

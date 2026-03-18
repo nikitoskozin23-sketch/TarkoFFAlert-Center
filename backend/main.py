@@ -75,6 +75,7 @@ DEFAULT_GUI_SETTINGS: dict[str, Any] = {
 }
 
 RUNTIME_SETTINGS: dict[str, Any] = {}
+_OBS_TEMP_HIDE_TASKS: dict[str, asyncio.Task] = {}
 
 _AMOUNT_RE = re.compile(
     r"^\s*([+-]?\d[\d\s\u00A0]*(?:[.,]\d+)?(?:[eE][+-]?\d+)?)(?:\s*([A-Za-zА-Яа-я₽$€]+))?\s*$",
@@ -128,12 +129,8 @@ def get_runtime_tts_voice() -> str:
     refresh_runtime_settings()
 
     raw_voice = str(RUNTIME_SETTINGS.get("tts_voice") or "").strip()
-    if not raw_voice:
+    if not raw_voice or raw_voice.lower() == "default":
         return DEFAULT_EDGE_TTS_VOICE
-
-    if raw_voice.lower() == "default":
-        return DEFAULT_EDGE_TTS_VOICE
-
     return raw_voice
 
 
@@ -210,16 +207,6 @@ providers = [
 VK_CONFIG = providers_cfg.get("vk_play") or {}
 VK_SEEN_IDS: deque[str] = deque(maxlen=1000)
 VK_SEEN_SET: set[str] = set()
-
-DEFAULT_QR_SCENE_NAME = "2"
-DEFAULT_QR_SOURCE_NAME = "TarkoFFchanin QR Donate Premium v2"
-DEFAULT_QR_DURATION_SEC = 15
-
-DEFAULT_SOCIAL_SCENE_NAME = "2"
-DEFAULT_SOCIAL_SOURCE_NAME = "TarkoFFchanin Social Promo Premium"
-DEFAULT_SOCIAL_DURATION_SEC = 10
-
-_OBS_TEMP_HIDE_TASKS: dict[str, asyncio.Task] = {}
 
 
 def cleanup_old_tts_files(max_age_seconds: int = 3600) -> None:
@@ -360,12 +347,9 @@ async def generate_tts_file(text: str) -> str:
     file_name = f"{uuid.uuid4().hex}.mp3"
     file_path = TTS_DIR / file_name
 
-    voice = get_runtime_tts_voice()
-    log.info("TTS generate with voice=%s", voice)
-
     communicate = edge_tts.Communicate(
         text=text,
-        voice=voice,
+        voice=get_runtime_tts_voice(),
         rate=EDGE_TTS_RATE,
         volume=EDGE_TTS_VOLUME,
         pitch=EDGE_TTS_PITCH,
@@ -536,6 +520,14 @@ def _obs_task_key(scene_name: str, source_name: str) -> str:
     return f"{scene_name}::{source_name}"
 
 
+def cancel_hide_source(scene_name: str, source_name: str) -> None:
+    key = _obs_task_key(scene_name, source_name)
+    task = _OBS_TEMP_HIDE_TASKS.get(key)
+    if task and not task.done():
+        task.cancel()
+    _OBS_TEMP_HIDE_TASKS.pop(key, None)
+
+
 async def _hide_source_later(scene_name: str, source_name: str, delay_sec: int) -> None:
     key = _obs_task_key(scene_name, source_name)
     try:
@@ -563,6 +555,42 @@ def schedule_hide_source(scene_name: str, source_name: str, delay_sec: int) -> N
 
     task = asyncio.create_task(_hide_source_later(scene_name, source_name, delay_sec))
     _OBS_TEMP_HIDE_TASKS[key] = task
+
+
+def _show_source_temp_impl(
+    scene_name: str,
+    source_name: str,
+    duration_sec: int,
+    success_text: str,
+) -> dict[str, Any]:
+    if not obs_controller.is_connected():
+        return {
+            "ok": False,
+            "message": "OBS не подключён. Сначала вызови /api/obs/connect",
+            "scene_name": scene_name,
+            "source_name": source_name,
+            "duration_sec": duration_sec,
+        }
+
+    ok, message = obs_controller.show_source(scene_name, source_name)
+    if not ok:
+        return {
+            "ok": False,
+            "message": message,
+            "scene_name": scene_name,
+            "source_name": source_name,
+            "duration_sec": duration_sec,
+        }
+
+    schedule_hide_source(scene_name, source_name, duration_sec)
+
+    return {
+        "ok": True,
+        "message": success_text,
+        "scene_name": scene_name,
+        "source_name": source_name,
+        "duration_sec": duration_sec,
+    }
 
 
 @asynccontextmanager
@@ -657,10 +685,6 @@ async def update_settings(payload: dict[str, Any]) -> dict[str, Any]:
     save_gui_settings(updated)
     refresh_runtime_settings()
 
-    log.info(
-        "GUI settings updated: %s",
-        {k: RUNTIME_SETTINGS.get(k) for k in allowed_keys},
-    )
     return {"ok": True, "settings": RUNTIME_SETTINGS}
 
 
@@ -675,7 +699,6 @@ async def toggle_ad(payload: dict[str, Any]) -> dict[str, Any]:
     save_gui_settings(updated)
     refresh_runtime_settings()
 
-    log.info("Site ad toggled: %s", "ON" if enabled else "OFF")
     return {"ok": True, "show_site_ads": enabled, "settings": RUNTIME_SETTINGS}
 
 
@@ -712,17 +735,51 @@ async def obs_status() -> dict[str, Any]:
         }
 
 
+@app.get("/api/obs/scenes-and-sources")
+async def obs_scenes_and_sources() -> dict[str, Any]:
+    if not obs_controller.is_connected():
+        return {
+            "ok": False,
+            "message": "OBS не подключён",
+            "current_scene": "",
+            "scenes": [],
+            "sources_by_scene": {},
+        }
+
+    try:
+        scenes = obs_controller.get_scene_names()
+        current_scene = obs_controller.get_current_program_scene()
+
+        sources_by_scene: dict[str, list[str]] = {}
+        for scene_name in scenes:
+            try:
+                sources_by_scene[scene_name] = obs_controller.get_scene_items(scene_name)
+            except Exception:
+                sources_by_scene[scene_name] = []
+
+        return {
+            "ok": True,
+            "current_scene": current_scene,
+            "scenes": scenes,
+            "sources_by_scene": sources_by_scene,
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "message": str(e),
+            "current_scene": "",
+            "scenes": [],
+            "sources_by_scene": {},
+        }
+
+
 @app.post("/api/obs/connect")
 async def obs_connect(payload: dict[str, Any]) -> dict[str, Any]:
     host = str(payload.get("host") or "127.0.0.1").strip()
     port = int(payload.get("port") or 4455)
     password = str(payload.get("password") or "")
 
-    ok, message = obs_controller.connect(
-        host=host,
-        port=port,
-        password=password,
-    )
+    ok, message = obs_controller.connect(host=host, port=port, password=password)
 
     result: dict[str, Any] = {
         "ok": ok,
@@ -767,6 +824,7 @@ async def obs_hide_source(payload: dict[str, Any]) -> dict[str, Any]:
     scene_name = str(payload.get("scene_name") or "").strip()
     source_name = str(payload.get("source_name") or "").strip()
 
+    cancel_hide_source(scene_name, source_name)
     ok, message = obs_controller.hide_source(scene_name, source_name)
     return {
         "ok": ok,
@@ -776,92 +834,24 @@ async def obs_hide_source(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@app.post("/api/obs/show-qr-temp")
-async def obs_show_qr_temp(payload: dict[str, Any]) -> dict[str, Any]:
-    scene_name = str(payload.get("scene_name") or DEFAULT_QR_SCENE_NAME).strip()
-    source_name = str(payload.get("source_name") or DEFAULT_QR_SOURCE_NAME).strip()
-    duration_sec = int(payload.get("duration_sec") or DEFAULT_QR_DURATION_SEC)
+@app.post("/api/obs/show-source-temp")
+async def obs_show_source_temp(payload: dict[str, Any]) -> dict[str, Any]:
+    scene_name = str(payload.get("scene_name") or "").strip()
+    source_name = str(payload.get("source_name") or "").strip()
+    duration_sec = int(payload.get("duration_sec") or 8)
 
-    if not obs_controller.is_connected():
-        return {
-            "ok": False,
-            "message": "OBS не подключён. Сначала вызови /api/obs/connect",
-            "scene_name": scene_name,
-            "source_name": source_name,
-            "duration_sec": duration_sec,
-        }
-
-    ok, message = obs_controller.show_source(scene_name, source_name)
-    if not ok:
-        return {
-            "ok": False,
-            "message": message,
-            "scene_name": scene_name,
-            "source_name": source_name,
-            "duration_sec": duration_sec,
-        }
-
-    schedule_hide_source(scene_name, source_name, duration_sec)
-
-    return {
-        "ok": True,
-        "message": f"Источник показан на {duration_sec} сек: {source_name}",
-        "scene_name": scene_name,
-        "source_name": source_name,
-        "duration_sec": duration_sec,
-    }
-
-
-@app.post("/api/obs/show-social-temp")
-async def obs_show_social_temp(payload: dict[str, Any]) -> dict[str, Any]:
-    scene_name = str(payload.get("scene_name") or DEFAULT_SOCIAL_SCENE_NAME).strip()
-    source_name = str(payload.get("source_name") or DEFAULT_SOCIAL_SOURCE_NAME).strip()
-    duration_sec = int(payload.get("duration_sec") or DEFAULT_SOCIAL_DURATION_SEC)
-
-    if not obs_controller.is_connected():
-        return {
-            "ok": False,
-            "message": "OBS не подключён. Сначала вызови /api/obs/connect",
-            "scene_name": scene_name,
-            "source_name": source_name,
-            "duration_sec": duration_sec,
-        }
-
-    ok, message = obs_controller.show_source(scene_name, source_name)
-    if not ok:
-        return {
-            "ok": False,
-            "message": message,
-            "scene_name": scene_name,
-            "source_name": source_name,
-            "duration_sec": duration_sec,
-        }
-
-    schedule_hide_source(scene_name, source_name, duration_sec)
-
-    return {
-        "ok": True,
-        "message": f"Social Promo показан на {duration_sec} сек: {source_name}",
-        "scene_name": scene_name,
-        "source_name": source_name,
-        "duration_sec": duration_sec,
-    }
+    return _show_source_temp_impl(
+        scene_name=scene_name,
+        source_name=source_name,
+        duration_sec=duration_sec,
+        success_text=f"Источник показан на {duration_sec} сек: {source_name}",
+    )
 
 
 @app.post("/api/test")
 async def send_test_alert(payload: dict[str, Any]) -> dict[str, Any]:
-    provider = str(
-        payload.get("provider")
-        or payload.get("platform")
-        or "donation_alerts"
-    ).strip()
-
-    event_type = str(
-        payload.get("event_type")
-        or payload.get("type")
-        or "donation"
-    ).strip()
-
+    provider = str(payload.get("provider") or payload.get("platform") or "donation_alerts").strip()
+    event_type = str(payload.get("event_type") or payload.get("type") or "donation").strip()
     title = str(payload.get("title") or "Новый донат").strip()
     username = str(
         payload.get("donor")
@@ -869,7 +859,6 @@ async def send_test_alert(payload: dict[str, Any]) -> dict[str, Any]:
         or payload.get("sender")
         or "TarkoFF Supporter"
     ).strip()
-
     amount = str(payload.get("amount") or "250").strip()
     message = str(payload.get("message") or "Тест из GUI").strip()
 
@@ -918,8 +907,6 @@ async def vk_webhook(request: Request) -> JSONResponse:
             event_id = str(bad_payload.get("id") or "0")
         except Exception:
             pass
-
-        log.warning("VK Play webhook: invalid signature")
         return JSONResponse({"id": event_id, "status": "invalid_signature"})
 
     try:
@@ -932,11 +919,6 @@ async def vk_webhook(request: Request) -> JSONResponse:
     event_type = str(payload.get("type") or "").strip()
 
     if linked_user_id and event_user_id and linked_user_id != event_user_id:
-        log.warning(
-            "VK Play webhook: unknown linked user_id payload=%s expected=%s",
-            event_user_id,
-            linked_user_id,
-        )
         return JSONResponse({"id": event_id, "status": "not_linked"})
 
     if event_id in VK_SEEN_SET:
@@ -945,7 +927,6 @@ async def vk_webhook(request: Request) -> JSONResponse:
     remember_vk_event_id(event_id)
 
     log.info("VK Play webhook received: type=%s id=%s", event_type, event_id)
-    log.debug("VK Play webhook payload: %s", payload)
 
     event = vk_event_to_alert(payload)
     if event:
