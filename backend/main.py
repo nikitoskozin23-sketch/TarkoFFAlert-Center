@@ -827,6 +827,17 @@ async def obs_connect(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+@app.post("/api/obs/switch-scene")
+async def obs_switch_scene(payload: dict[str, Any]) -> dict[str, Any]:
+    scene_name = str(payload.get("scene_name") or "").strip()
+    ok, message = obs_controller.switch_scene(scene_name)
+    return {
+        "ok": ok,
+        "message": message,
+        "scene_name": scene_name,
+    }
+
+
 @app.post("/api/obs/show-source")
 async def obs_show_source(payload: dict[str, Any]) -> dict[str, Any]:
     scene_name = str(payload.get("scene_name") or "").strip()
