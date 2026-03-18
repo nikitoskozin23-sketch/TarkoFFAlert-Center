@@ -13,6 +13,11 @@ log = logging.getLogger("obs_controller")
 
 
 class OBSController:
+    BROWSER_INPUT_KINDS = {
+        "browser_source",
+        "browser_source_v2",
+    }
+
     def __init__(self) -> None:
         self.client: Any | None = None
         self.host = "127.0.0.1"
@@ -58,6 +63,17 @@ class OBSController:
         finally:
             self.client = None
 
+    def _extract_list(self, response: Any, *names: str) -> list[Any]:
+        for name in names:
+            value = getattr(response, name, None)
+            if isinstance(value, list):
+                return value
+            if isinstance(response, dict):
+                value = response.get(name)
+                if isinstance(value, list):
+                    return value
+        return []
+
     def get_version(self) -> dict[str, Any]:
         if not self.is_connected():
             return {}
@@ -83,21 +99,14 @@ class OBSController:
             return []
 
         response = self.client.get_scene_list()
-
-        raw_scenes = getattr(response, "scenes", None)
-        if raw_scenes is None and isinstance(response, dict):
-            raw_scenes = response.get("scenes")
+        raw_scenes = self._extract_list(response, "scenes")
 
         result: list[str] = []
         seen: set[str] = set()
 
-        for scene in raw_scenes or []:
+        for scene in raw_scenes:
             if isinstance(scene, dict):
-                name = str(
-                    scene.get("sceneName")
-                    or scene.get("scene_name")
-                    or ""
-                ).strip()
+                name = str(scene.get("sceneName") or scene.get("scene_name") or "").strip()
             else:
                 name = str(
                     getattr(scene, "sceneName", "")
@@ -116,7 +125,6 @@ class OBSController:
             return ""
 
         response = self.client.get_current_program_scene()
-
         return str(
             getattr(response, "current_program_scene_name", None)
             or getattr(response, "currentProgramSceneName", None)
@@ -207,23 +215,14 @@ class OBSController:
             return []
 
         response = self.client.get_scene_item_list(scene_name)
-
-        raw_items = getattr(response, "scene_items", None)
-        if raw_items is None:
-            raw_items = getattr(response, "sceneItems", None)
-        if raw_items is None and isinstance(response, dict):
-            raw_items = response.get("scene_items") or response.get("sceneItems")
+        raw_items = self._extract_list(response, "scene_items", "sceneItems")
 
         result: list[str] = []
         seen: set[str] = set()
 
-        for item in raw_items or []:
+        for item in raw_items:
             if isinstance(item, dict):
-                name = str(
-                    item.get("sourceName")
-                    or item.get("source_name")
-                    or ""
-                ).strip()
+                name = str(item.get("sourceName") or item.get("source_name") or "").strip()
             else:
                 name = str(
                     getattr(item, "sourceName", "")
@@ -236,3 +235,93 @@ class OBSController:
                 result.append(name)
 
         return result
+
+    def get_inputs(self) -> list[dict[str, str]]:
+        if not self.is_connected():
+            return []
+
+        try:
+            response = self.client.get_input_list()
+        except Exception:
+            return []
+
+        raw_inputs = self._extract_list(response, "inputs")
+        result: list[dict[str, str]] = []
+        seen: set[str] = set()
+
+        for item in raw_inputs:
+            if isinstance(item, dict):
+                name = str(item.get("inputName") or item.get("input_name") or "").strip()
+                kind = str(item.get("inputKind") or item.get("input_kind") or "").strip()
+            else:
+                name = str(
+                    getattr(item, "inputName", "")
+                    or getattr(item, "input_name", "")
+                    or ""
+                ).strip()
+                kind = str(
+                    getattr(item, "inputKind", "")
+                    or getattr(item, "input_kind", "")
+                    or ""
+                ).strip()
+
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            result.append({"name": name, "kind": kind})
+
+        result.sort(key=lambda x: x["name"].lower())
+        return result
+
+    def get_browser_sources(self) -> list[dict[str, str]]:
+        return [
+            item for item in self.get_inputs()
+            if item.get("kind", "") in self.BROWSER_INPUT_KINDS
+        ]
+
+    def refresh_browser_source(self, source_name: str) -> tuple[bool, str]:
+        if not self.is_connected():
+            return False, "OBS не подключён"
+
+        source_name = str(source_name or "").strip()
+        if not source_name:
+            return False, "Не указано имя источника"
+
+        try:
+            self.client.press_input_properties_button(source_name, "refreshnocache")
+            return True, f"Кэш страницы обновлён: {source_name}"
+        except Exception as e:
+            return False, (
+                "Не удалось обновить страницу источника. "
+                "Проверь, что это именно Browser Source: "
+                f"{e}"
+            )
+
+    def refresh_all_browser_sources(
+        self,
+        source_names: list[str] | None = None,
+    ) -> tuple[bool, list[dict[str, str]]]:
+        if not self.is_connected():
+            return False, [{"name": "", "status": "error", "message": "OBS не подключён"}]
+
+        browser_sources = self.get_browser_sources()
+        allowed_names = {item["name"] for item in browser_sources}
+
+        if source_names:
+            target_names = [name for name in source_names if name in allowed_names]
+        else:
+            target_names = sorted(allowed_names)
+
+        results: list[dict[str, str]] = []
+        for name in target_names:
+            ok, message = self.refresh_browser_source(name)
+            results.append(
+                {
+                    "name": name,
+                    "status": "ok" if ok else "error",
+                    "message": message,
+                }
+            )
+
+        overall_ok = all(item["status"] == "ok" for item in results) if results else True
+        return overall_ok, results

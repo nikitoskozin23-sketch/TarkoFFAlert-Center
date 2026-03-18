@@ -773,6 +773,28 @@ async def obs_scenes_and_sources() -> dict[str, Any]:
         }
 
 
+@app.get("/api/obs/browser-sources")
+async def obs_browser_sources() -> dict[str, Any]:
+    if not obs_controller.is_connected():
+        return {
+            "ok": False,
+            "message": "OBS не подключён",
+            "browser_sources": [],
+        }
+
+    try:
+        return {
+            "ok": True,
+            "browser_sources": obs_controller.get_browser_sources(),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "message": str(e),
+            "browser_sources": [],
+        }
+
+
 @app.post("/api/obs/connect")
 async def obs_connect(payload: dict[str, Any]) -> dict[str, Any]:
     host = str(payload.get("host") or "127.0.0.1").strip()
@@ -846,6 +868,35 @@ async def obs_show_source_temp(payload: dict[str, Any]) -> dict[str, Any]:
         duration_sec=duration_sec,
         success_text=f"Источник показан на {duration_sec} сек: {source_name}",
     )
+
+
+@app.post("/api/obs/refresh-browser-source")
+async def obs_refresh_browser_source(payload: dict[str, Any]) -> dict[str, Any]:
+    source_name = str(payload.get("source_name") or "").strip()
+
+    ok, message = obs_controller.refresh_browser_source(source_name)
+    return {
+        "ok": ok,
+        "message": message,
+        "source_name": source_name,
+    }
+
+
+@app.post("/api/obs/refresh-all-browser-sources")
+async def obs_refresh_all_browser_sources(payload: dict[str, Any]) -> dict[str, Any]:
+    names_raw = payload.get("source_names")
+    source_names: list[str] | None
+    if isinstance(names_raw, list):
+        source_names = [str(item).strip() for item in names_raw if str(item).strip()]
+    else:
+        source_names = None
+
+    ok, results = obs_controller.refresh_all_browser_sources(source_names)
+    return {
+        "ok": ok,
+        "results": results,
+        "count": len(results),
+    }
 
 
 @app.post("/api/test")
